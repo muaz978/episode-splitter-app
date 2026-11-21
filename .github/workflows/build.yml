@@ -1,0 +1,27 @@
+# Optional: builds the apps on GitHub's own Mac and Windows machines.
+# The Windows build here uses Microsoft's toolchain, which gives ONE standalone .exe (no extra DLL).
+# Run it from the Actions tab ("Run workflow") after putting this folder in a repository.
+name: build
+on:
+  workflow_dispatch:
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo build --release
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Episode-Part-Splitter-windows-single-exe
+          path: target/release/episode-splitter.exe
+  mac:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: ./package-mac.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Episode-Part-Splitter-mac
+          path: dist/Episode-Part-Splitter-mac.zip

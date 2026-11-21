@@ -1,0 +1,1062 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>Episode Part Splitter</title>
+<style>
+  /* ============================================================
+     Design tokens. light-dark() follows the system theme unless the
+     user picks Light or Dark with the switch in the header.
+     ============================================================ */
+  :root {
+    color-scheme: light dark;
+    --page:        light-dark(#E4EDF0, #091014);
+    --solid:       light-dark(#F3F7F8, #141D24);
+    --ink:         light-dark(#14212B, #EAF0F3);
+    --ink-2:       light-dark(#34424F, #C5D0D8);
+    --muted:       light-dark(#5A6874, #94A4B0);
+    --accent:      light-dark(#0F4C5C, #7FD0DF);
+    --btn:         light-dark(#0F4C5C, #2A8DA2);
+    --btn-ink:     #FFFFFF;
+    --gold:        light-dark(#C8963E, #E2B35E);
+    --warn:        light-dark(#9A4A12, #F0B27A);
+    --warn-soft:   light-dark(rgb(240 190 140 / .35), rgb(240 178 122 / .16));
+
+    --glass-a:     light-dark(rgb(255 255 255 / .66), rgb(255 255 255 / .13));
+    --glass-b:     light-dark(rgb(255 255 255 / .30), rgb(255 255 255 / .04));
+    --glass-edge:  light-dark(rgb(255 255 255 / .80), rgb(255 255 255 / .20));
+    --glass-lit:   light-dark(rgb(255 255 255 / .90), rgb(255 255 255 / .28));
+    --spec:        light-dark(rgb(255 255 255 / .55), rgb(255 255 255 / .13));
+    --glass-drop:  light-dark(rgb(15 76 92 / .30), rgb(0 0 0 / .60));
+
+    --field:       light-dark(rgb(255 255 255 / .55), rgb(255 255 255 / .07));
+    --field-edge:  light-dark(rgb(15 76 92 / .16), rgb(255 255 255 / .14));
+    --row-alt:     light-dark(rgb(255 255 255 / .30), rgb(255 255 255 / .03));
+    --row-hover:   light-dark(rgb(15 76 92 / .08), rgb(127 208 223 / .10));
+    --head-bg:     light-dark(rgb(15 76 92 / .90), rgb(127 208 223 / .24));
+    --head-ink:    light-dark(#FFFFFF, #DDF4F8);
+    --tint:        light-dark(rgb(15 76 92 / .12), rgb(127 208 223 / .14));
+    --seg-on:      light-dark(rgb(255 255 255 / .95), rgb(255 255 255 / .18));
+
+    --blob1:       light-dark(rgb(40 165 185 / .55), rgb(20 125 155 / .55));
+    --blob2:       light-dark(rgb(235 180 85 / .50), rgb(205 145 55 / .30));
+    --blob3:       light-dark(rgb(140 150 255 / .40), rgb(95 95 225 / .34));
+
+    --radius: 22px;
+    --sans: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Helvetica, Arial, sans-serif;
+    --serif: Georgia, "Times New Roman", serif;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  :root[data-theme="light"] { color-scheme: light; }
+  :root[data-theme="dark"]  { color-scheme: dark; }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body {
+    margin: 0; min-height: 100vh; color: var(--ink); background: var(--page);
+    font: 15px/1.5 var(--sans); -webkit-font-smoothing: antialiased;
+  }
+
+  /* ---------- animated backdrop: gives the glass something to refract ---------- */
+  .bg { position: fixed; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+  .blob { position: absolute; border-radius: 50%; filter: blur(72px); will-change: transform; }
+  .b1 { width: 52vmax; height: 52vmax; left: -14vmax; top: -18vmax; background: var(--blob1); animation: drift1 30s ease-in-out infinite alternate; }
+  .b2 { width: 44vmax; height: 44vmax; right: -12vmax; top: 18vh;   background: var(--blob2); animation: drift2 36s ease-in-out infinite alternate; }
+  .b3 { width: 46vmax; height: 46vmax; left: 22vw;  bottom: -24vmax; background: var(--blob3); animation: drift3 42s ease-in-out infinite alternate; }
+  @keyframes drift1 { to { transform: translate(9vmax, 7vmax) scale(1.08); } }
+  @keyframes drift2 { to { transform: translate(-8vmax, -6vmax) scale(1.12); } }
+  @keyframes drift3 { to { transform: translate(-10vmax, -5vmax) scale(.94); } }
+
+  .wrap { position: relative; z-index: 1; max-width: 1240px; margin: 0 auto; padding: 24px 22px 72px; }
+
+  /* ---------- the glass material (used only on the outer layer, never nested) ---------- */
+  .glass {
+    position: relative; isolation: isolate;
+    background: linear-gradient(145deg, var(--glass-a), var(--glass-b));
+    -webkit-backdrop-filter: blur(26px) saturate(170%);
+            backdrop-filter: blur(26px) saturate(170%);
+    border: 1px solid var(--glass-edge);
+    border-radius: var(--radius);
+    box-shadow:
+      inset 0 1px 0 var(--glass-lit),
+      inset 0 -1px 0 rgb(255 255 255 / .06),
+      0 1px 2px rgb(0 0 0 / .05),
+      0 22px 48px -20px var(--glass-drop);
+  }
+  .glass::before {            /* specular highlight in the top-left corner */
+    content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+    background:
+      radial-gradient(120% 70% at 0% 0%, var(--spec), transparent 46%),
+      linear-gradient(180deg, rgb(255 255 255 / .08), transparent 28%);
+  }
+  @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+    .glass { background: var(--solid); }
+  }
+  @media (prefers-reduced-transparency: reduce) {
+    .glass, .toast { -webkit-backdrop-filter: none; backdrop-filter: none; background: var(--solid); }
+    .blob { display: none; }
+  }
+  @media (prefers-contrast: more) {
+    .glass { border-color: var(--ink-2); }
+    :root { --field-edge: var(--ink-2); }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .blob { animation: none; }
+    * { transition: none !important; }
+  }
+
+  /* ---------- masthead ---------- */
+  .masthead {
+    display: flex; align-items: flex-end; justify-content: space-between; gap: 20px; flex-wrap: wrap;
+    padding: 26px 30px 24px; margin-bottom: 22px;
+    border-bottom: 3px solid var(--gold);
+  }
+  .masthead::after {          /* teal wash behind the title */
+    content: ""; position: absolute; inset: 0; z-index: -1; border-radius: inherit; pointer-events: none;
+    background: linear-gradient(120deg, rgb(15 76 92 / .88), rgb(15 76 92 / .55) 55%, rgb(15 76 92 / .25));
+  }
+  .kicker { margin: 0 0 8px; font-size: 11px; font-weight: 700; letter-spacing: 2.2px; color: #F0C27A; }
+  .masthead h1 { margin: 0 0 6px; font: 700 30px/1.15 var(--serif); color: #fff; text-wrap: balance; }
+  .masthead p.sub { margin: 0; max-width: 62ch; font-size: 13.5px; color: #D5E7EC; }
+  .mast-tools { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .tag {
+    font: 500 11.5px var(--mono); letter-spacing: .14em; text-transform: uppercase; color: #D5E7EC;
+    border: 1px solid rgb(255 255 255 / .32); border-radius: 999px; padding: 5px 12px;
+  }
+  .masthead .seg { background: rgb(255 255 255 / .12); border-color: rgb(255 255 255 / .28); }
+  .masthead .seg button { color: #E6F1F4; }
+  .masthead .seg button[aria-pressed="true"] { background: rgb(255 255 255 / .92); color: #0F4C5C; }
+
+  /* ---------- layout ---------- */
+  .cols { display: grid; grid-template-columns: 372px minmax(0, 1fr); gap: 22px; align-items: start; }
+  @media (max-width: 980px) { .cols { grid-template-columns: 1fr; } }
+  .stack { display: flex; flex-direction: column; gap: 20px; }
+
+  .panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 15px 20px 0; }
+  .panel-head h2 {
+    margin: 0; padding-left: 10px; border-left: 4px solid var(--gold);
+    font-size: 12px; font-weight: 700; letter-spacing: 1.8px; text-transform: uppercase; color: var(--accent);
+  }
+  .panel-body { padding: 16px 20px 20px; display: flex; flex-direction: column; gap: 16px; }
+
+  .cap { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  label.fld { display: flex; flex-direction: column; gap: 6px; }
+  .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  .hint { margin: 0; font-size: 12.5px; color: var(--muted); }
+  .hint.err { color: var(--warn); font-weight: 600; }
+  .hint code { font-family: var(--mono); font-size: 12px; color: var(--ink-2); }
+
+  /* ---------- controls (flat, translucent: they sit on the glass, they are not glass) ---------- */
+  input.fi, input[type="date"] {
+    width: 100%; color: var(--ink); background: var(--field); border: 1px solid var(--field-edge);
+    border-radius: 12px; padding: 9px 12px; font: 15px var(--mono); font-variant-numeric: tabular-nums;
+    transition: border-color .15s, box-shadow .15s, background .15s;
+  }
+  input.fi.sans, input[type="date"] { font-family: var(--sans); }
+  input.fi::placeholder { color: var(--muted); }
+  input:focus-visible, button:focus-visible {
+    outline: none; border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
+  }
+  input.bad { border-color: var(--warn); background: var(--warn-soft); }
+
+  .stepper { display: flex; }
+  .stepper input { border-radius: 0; text-align: center; font-size: 17px; font-weight: 700; }
+  .stepper button {
+    flex: 0 0 46px; border: 1px solid var(--field-edge); background: var(--field); color: var(--ink);
+    font: 19px var(--mono); cursor: pointer; transition: background .15s;
+  }
+  .stepper button:first-child { border-radius: 12px 0 0 12px; border-right: 0; }
+  .stepper button:last-child  { border-radius: 0 12px 12px 0; border-left: 0; }
+  .stepper button:hover { background: var(--tint); }
+
+  .seg { display: inline-flex; padding: 3px; gap: 2px; border-radius: 999px; background: var(--field); border: 1px solid var(--field-edge); }
+  .seg button {
+    border: 0; background: transparent; color: var(--ink-2); cursor: pointer;
+    font: 600 13px var(--sans); padding: 6px 14px; border-radius: 999px; transition: background .18s, color .18s, box-shadow .18s;
+  }
+  .seg button[aria-pressed="true"] { background: var(--seg-on); color: var(--ink); box-shadow: 0 1px 3px rgb(0 0 0 / .18), inset 0 1px 0 rgb(255 255 255 / .5); }
+
+  .link-btn {
+    border: 0; background: transparent; color: var(--accent); cursor: pointer;
+    font: 700 11px var(--sans); letter-spacing: .1em; text-transform: uppercase; padding: 4px 8px; border-radius: 8px;
+  }
+  .link-btn:hover { background: var(--tint); }
+
+  .btn {
+    border: 1px solid rgb(255 255 255 / .35); color: var(--btn-ink); cursor: pointer;
+    font: 700 14px var(--sans); padding: 10px 20px; border-radius: 999px;
+    background: linear-gradient(180deg, rgb(255 255 255 / .30), rgb(255 255 255 / 0) 52%), var(--btn);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / .5), 0 8px 20px -8px var(--btn);
+    transition: transform .15s, filter .15s;
+  }
+  .btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn.ghost {
+    background: var(--field); color: var(--accent); border-color: var(--field-edge); box-shadow: none;
+  }
+  .btn.ghost:hover { background: var(--tint); }
+  .mini-btn {
+    border: 1px solid var(--field-edge); background: var(--field); color: var(--ink-2); cursor: pointer;
+    font: 600 12.5px var(--sans); padding: 7px 13px; border-radius: 999px; transition: background .15s, color .15s;
+  }
+  .mini-btn:hover { background: var(--tint); color: var(--accent); }
+  .icon-btn {
+    border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer;
+    font: 700 10.5px var(--sans); letter-spacing: .08em; padding: 5px 9px; border-radius: 999px;
+  }
+  .icon-btn:hover { color: var(--accent); background: var(--tint); }
+
+  .toggles { display: flex; flex-direction: column; gap: 11px; }
+  .chk { display: flex; align-items: flex-start; gap: 10px; font-size: 13.5px; color: var(--ink-2); cursor: pointer; }
+  .chk input { margin: 3px 0 0; width: 15px; height: 15px; accent-color: var(--btn); flex: 0 0 auto; }
+  .chk code { font: 12px var(--mono); }
+  .chk b { color: var(--ink); }
+
+  /* ---------- editors ---------- */
+  .roster { list-style: none; margin: 0; padding: 6px; display: flex; flex-direction: column; gap: 4px;
+    background: var(--field); border: 1px solid var(--field-edge); border-radius: 16px; min-height: 48px; }
+  .roster:empty::after { content: "No editors yet"; color: var(--muted); font-size: 13px; padding: 10px; }
+  .ed {
+    display: flex; align-items: center; gap: 8px; padding: 5px 7px; border-radius: 12px;
+    background: var(--row-alt); border: 1px solid transparent; transition: background .15s, border-color .15s;
+  }
+  .ed:hover { border-color: var(--field-edge); background: var(--field); }
+  .ed.dragging { opacity: .45; }
+  .ed.off .ed-name { color: var(--muted); text-decoration: line-through; }
+  .grip { flex: 0 0 auto; border: 0; background: transparent; color: var(--muted); cursor: grab; padding: 3px 2px; border-radius: 6px; font-size: 13px; line-height: 1; }
+  .grip:hover { color: var(--accent); }
+  .grip:active { cursor: grabbing; }
+  .ed-on { flex: 0 0 auto; margin: 0; width: 15px; height: 15px; accent-color: var(--btn); }
+  .ed-name {
+    flex: 1 1 auto; min-width: 0; border: 1px solid transparent; background: transparent; border-radius: 8px;
+    font: 14px var(--sans); color: var(--ink); padding: 4px 6px;
+  }
+  .ed-name:hover { border-color: var(--field-edge); }
+  .ed-name:focus { background: var(--field); border-color: var(--field-edge); outline: none; }
+  .slot {
+    flex: 0 0 auto; font: 600 10.5px var(--mono); letter-spacing: .04em; white-space: nowrap;
+    color: var(--accent); background: var(--tint); border-radius: 999px; padding: 3px 9px;
+  }
+  .slot.muted { color: var(--muted); background: transparent; }
+  .ed-del { flex: 0 0 auto; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 17px; line-height: 1; padding: 1px 7px; border-radius: 8px; }
+  .ed-del:hover { color: var(--warn); background: var(--warn-soft); }
+  .addrow { display: flex; gap: 8px; }
+  .addrow input { flex: 1 1 auto; }
+  .add-btn {
+    flex: 0 0 auto; border: 1px solid var(--field-edge); background: var(--field); color: var(--ink-2); cursor: pointer;
+    font: 600 13px var(--sans); padding: 0 18px; border-radius: 12px;
+  }
+  .add-btn:hover { background: var(--tint); color: var(--accent); }
+
+  /* ---------- rotation ---------- */
+  .weeknav { display: flex; }
+  .weeknav input[type="date"] { border-radius: 0; text-align: center; }
+  .weeknav button {
+    flex: 0 0 44px; border: 1px solid var(--field-edge); background: var(--field); color: var(--ink); font-size: 18px; cursor: pointer;
+  }
+  .weeknav button:first-child { border-radius: 12px 0 0 12px; border-right: 0; }
+  .weeknav button:last-child  { border-radius: 0 12px 12px 0; border-left: 0; }
+  .weeknav button:hover { background: var(--tint); }
+  .btn-row { display: flex; gap: 8px; flex-wrap: wrap; }
+  .outlook { display: flex; flex-direction: column; border: 1px solid var(--field-edge); border-radius: 14px; overflow: hidden; background: var(--field); }
+  .outlook div { display: flex; gap: 10px; padding: 8px 12px; font-size: 12.5px; border-bottom: 1px solid var(--field-edge); }
+  .outlook div:last-child { border-bottom: 0; }
+  .outlook div.now { background: var(--tint); }
+  .outlook b { flex: 0 0 62px; font-weight: 700; color: var(--accent); white-space: nowrap; }
+  .outlook span { color: var(--ink-2); min-width: 0; }
+
+  /* ---------- results ---------- */
+  .pill { font: 600 11.5px var(--sans); color: var(--accent); background: var(--tint); border-radius: 999px; padding: 4px 12px; white-space: nowrap; }
+  .head-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 16px 20px 0; }
+  @media (max-width: 720px) { .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  .stat { background: var(--field); border: 1px solid var(--field-edge); border-radius: 16px; padding: 12px 14px; }
+  .stat .k { font-size: 10.5px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; color: var(--muted); }
+  .stat .v { font: 700 23px/1.25 var(--serif); color: var(--accent); font-variant-numeric: tabular-nums; }
+  .stat .s { font-size: 12px; color: var(--muted); }
+
+  .ribbon { position: relative; display: flex; height: 40px; margin: 16px 20px 16px; border-radius: 14px; overflow: hidden; border: 1px solid var(--field-edge); }
+  .ribbon div {
+    display: flex; align-items: center; justify-content: center; overflow: hidden; white-space: nowrap;
+    background: var(--btn); color: var(--btn-ink); font-size: 11.5px; font-weight: 700; border-right: 2px solid var(--gold);
+  }
+  .ribbon div:last-child { border-right: 0; }
+  .ribbon div:nth-child(even) { filter: brightness(1.3) saturate(.85); }
+  .ribbon::after { content: ""; position: absolute; inset: 0 0 50% 0; background: linear-gradient(180deg, rgb(255 255 255 / .34), rgb(255 255 255 / 0)); pointer-events: none; }
+
+  .tablewrap { margin: 0 20px; overflow-x: auto; border: 1px solid var(--field-edge); border-radius: 16px; background: var(--field); }
+  table.res { width: 100%; border-collapse: collapse; }
+  table.res th {
+    text-align: left; font-size: 10.5px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase;
+    color: var(--head-ink); background: var(--head-bg); padding: 11px 14px; white-space: nowrap;
+  }
+  table.res th.r, table.res td.r, td.dur { text-align: right; }
+  table.res td { padding: 11px 14px; border-top: 1px solid var(--field-edge); vertical-align: middle; }
+  table.res tbody tr:nth-child(even) td { background: var(--row-alt); }
+  table.res tbody tr:hover td { background: var(--row-hover); }
+  td.idx { width: 40px; font: 12px var(--mono); color: var(--muted); }
+  td.who { font-weight: 700; white-space: nowrap; }
+  td.who .unnamed { font-weight: 400; color: var(--muted); font-style: italic; }
+  td.tc { font: 14.5px var(--mono); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  td.dur { white-space: nowrap; }
+  td.dur .m { font-weight: 700; font-variant-numeric: tabular-nums; }
+  td.dur .p { display: block; font-size: 11.5px; color: var(--muted); }
+  td.act { width: 60px; text-align: right; }
+  tr.totalrow td { background: var(--tint) !important; border-top: 2px solid var(--accent); font-weight: 700; }
+  .note { margin: 10px 22px 0; font-size: 12px; color: var(--muted); }
+  .empty { padding: 40px 16px; text-align: center; color: var(--muted); font-size: 14px; }
+
+  .copybar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 16px 20px; margin-top: 16px; border-top: 1px solid var(--field-edge); }
+  .grow { flex: 1 1 auto; }
+  kbd { font: 11px var(--mono); padding: 1px 6px; border-radius: 6px; border: 1px solid var(--field-edge); background: var(--field); color: var(--muted); }
+
+  .prevhead { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 0 20px; flex-wrap: wrap; }
+  .prevwrap { padding: 12px 20px 22px; }
+  .emailprev {             /* what you paste: always the light email look */
+    color-scheme: light; background: #FFFFFF; color: #1B2430; border: 1px solid rgb(0 0 0 / .08); border-radius: 16px;
+    padding: 22px 24px; overflow-x: auto; box-shadow: 0 10px 30px -16px rgb(0 0 0 / .35);
+  }
+  pre.plainprev {
+    margin: 0; padding: 14px 16px; background: var(--field); border: 1px solid var(--field-edge); border-radius: 16px;
+    font: 13px/1.7 var(--mono); color: var(--ink-2); white-space: pre; overflow: auto; max-height: 380px;
+  }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 26px; z-index: 50; max-width: 92vw; display: flex; align-items: center; gap: 12px;
+    transform: translateX(-50%) translateY(10px); opacity: 0; pointer-events: none;
+    padding: 10px 18px; border-radius: 999px; font-size: 13.5px; font-weight: 600; color: #fff;
+    background: rgb(18 30 38 / .78); border: 1px solid rgb(255 255 255 / .22);
+    -webkit-backdrop-filter: blur(20px) saturate(160%); backdrop-filter: blur(20px) saturate(160%);
+    box-shadow: inset 0 1px 0 rgb(255 255 255 / .25), 0 14px 34px -12px rgb(0 0 0 / .55);
+    transition: opacity .2s ease, transform .2s ease;
+  }
+  .toast.on { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.act { pointer-events: auto; }
+  .toast button { border: 0; background: rgb(255 255 255 / .18); color: #fff; font: 700 12px var(--sans); padding: 4px 12px; border-radius: 999px; cursor: pointer; }
+  .toast button:hover { background: rgb(255 255 255 / .3); }
+
+  footer.foot { margin: 26px 4px 0; font-size: 12.5px; line-height: 1.7; color: var(--muted); max-width: 104ch; }
+</style>
+</head>
+<body>
+<div class="bg" aria-hidden="true"><i class="blob b1"></i><i class="blob b2"></i><i class="blob b3"></i></div>
+
+<div class="wrap">
+  <header class="glass masthead">
+    <div>
+      <p class="kicker">HILALPLAY | SUBTITLING</p>
+      <h1>Episode Part Splitter</h1>
+      <p class="sub">Divide an episode into equal time parts, rotate who takes which part every week, and copy a ready-styled block straight into the assignment email.</p>
+    </div>
+    <div class="mast-tools">
+      <div class="seg" role="group" aria-label="Theme" id="themeSeg">
+        <button type="button" data-theme-set="auto" aria-pressed="true">Auto</button>
+        <button type="button" data-theme-set="light" aria-pressed="false">Light</button>
+        <button type="button" data-theme-set="dark" aria-pressed="false">Dark</button>
+      </div>
+      <span class="tag">HH:MM:SS</span>
+    </div>
+  </header>
+
+  <div class="cols">
+    <!-- ============ left column ============ -->
+    <div class="stack">
+      <section class="glass" aria-label="Episode settings">
+        <div class="panel-head"><h2>Episode</h2></div>
+        <div class="panel-body">
+          <label class="fld">
+            <span class="cap">Label for the email (optional)</span>
+            <input type="text" class="fi sans" id="label" placeholder="Teşkilat S1 E182">
+          </label>
+          <div class="row2">
+            <label class="fld"><span class="cap">Start</span>
+              <input type="text" class="fi" id="start" inputmode="numeric" placeholder="00:00:00" spellcheck="false" autocomplete="off"></label>
+            <label class="fld"><span class="cap">End</span>
+              <input type="text" class="fi" id="end" inputmode="numeric" placeholder="02:24:00" spellcheck="false" autocomplete="off"></label>
+          </div>
+          <p class="hint">Accepts <code>00:00:00</code>, <code>1:23:45</code>, or Subtitle Edit's <code>01:23:45,250</code>.</p>
+          <div class="fld">
+            <span class="cap">Number of parts</span>
+            <div class="stepper">
+              <button type="button" id="minus" aria-label="One part fewer">-</button>
+              <input type="text" class="fi" id="parts" inputmode="numeric" value="5" aria-label="Number of parts" autocomplete="off">
+              <button type="button" id="plus" aria-label="One part more">+</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="glass" aria-label="Editors">
+        <div class="panel-head"><h2>Editors</h2>
+          <span><button type="button" class="link-btn" id="allOn">All</button><button type="button" class="link-btn" id="allOff">None</button></span>
+        </div>
+        <div class="panel-body">
+          <ul class="roster" id="roster"></ul>
+          <div class="addrow">
+            <input type="text" class="fi sans" id="newname" placeholder="Add an editor" spellcheck="false" autocomplete="off">
+            <button type="button" class="add-btn" id="addname">Add</button>
+          </div>
+          <p class="hint" id="namehint"></p>
+        </div>
+      </section>
+
+      <section class="glass" aria-label="Weekly rotation">
+        <div class="panel-head"><h2>Weekly rotation</h2></div>
+        <div class="panel-body">
+          <label class="chk">
+            <input type="checkbox" id="rotAuto" checked>
+            <span><b>Rotate automatically every week.</b> Everyone moves down one part and the last person comes back to part 1.</span>
+          </label>
+          <div id="rotBox" style="display:flex;flex-direction:column;gap:14px">
+            <div class="fld">
+              <span class="cap">Week of</span>
+              <div class="weeknav">
+                <button type="button" id="weekPrev" aria-label="Previous week">&lsaquo;</button>
+                <input type="date" id="weekDate" aria-label="Pick any day in the week">
+                <button type="button" id="weekNext" aria-label="Next week">&rsaquo;</button>
+              </div>
+              <p class="hint" id="rotHint"></p>
+            </div>
+            <div class="outlook" id="outlook" aria-label="Next weeks"></div>
+            <div class="btn-row">
+              <button type="button" class="mini-btn" id="weekToday">This week</button>
+              <button type="button" class="mini-btn" id="bake" title="Keep this week's order and count the rotation from here">Make this week the new week 1</button>
+            </div>
+            <p class="hint">Weeks run Monday to Sunday. The Editors list always shows the order for the week you pick, and it matches the table.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="glass" aria-label="Options">
+        <div class="panel-head"><h2>Options</h2></div>
+        <div class="panel-body">
+          <div class="toggles">
+            <label class="chk"><input type="checkbox" id="len" checked><span>Show how long each person works (minutes)</span></label>
+            <label class="chk"><input type="checkbox" id="snap" checked><span>Round each boundary to a whole second</span></label>
+            <label class="chk"><input type="checkbox" id="ms"><span>Show milliseconds (<code>00:24:00,000</code>)</span></label>
+            <label class="chk"><input type="checkbox" id="gap"><span>Start each part 1 second after the previous one ends</span></label>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <!-- ============ right column ============ -->
+    <section class="glass" aria-label="Part division">
+      <div class="panel-head">
+        <h2>Division</h2>
+        <div class="head-right"><span class="pill" id="weekPill"></span><button type="button" class="icon-btn" id="reset">RESET</button></div>
+      </div>
+      <div class="stats" id="stats"></div>
+      <div class="ribbon" id="ribbon" aria-hidden="true"></div>
+      <div class="tablewrap">
+        <table class="res">
+          <thead><tr>
+            <th style="width:40px">#</th><th>Editor</th><th>From</th><th>To</th><th class="r" id="thLen">Length</th><th></th>
+          </tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <p class="note" id="note" hidden></p>
+
+      <div class="copybar">
+        <div class="seg" role="group" aria-label="Layout">
+          <button type="button" data-fmt="table" aria-pressed="true">Table</button>
+          <button type="button" data-fmt="list" aria-pressed="false">List</button>
+        </div>
+        <span class="grow"></span>
+        <button type="button" class="btn ghost" id="copyPlain">Copy as plain text</button>
+        <button type="button" class="btn" id="copyMain" title="Ctrl or Cmd + Enter">Copy for email</button>
+      </div>
+
+      <div class="prevhead">
+        <span class="cap">What you will paste <kbd>Ctrl/Cmd</kbd> <kbd>Enter</kbd></span>
+        <div class="seg" role="group" aria-label="Preview type">
+          <button type="button" data-view="email" aria-pressed="true">Email look</button>
+          <button type="button" data-view="plain" aria-pressed="false">Plain text</button>
+        </div>
+      </div>
+      <div class="prevwrap">
+        <div class="emailprev" id="emailprev"></div>
+        <pre class="plainprev" id="plainprev" hidden></pre>
+      </div>
+    </section>
+  </div>
+
+  <footer class="foot">
+    Parts are contiguous by default: each begins where the previous one ends, so nothing is dropped between editors. Any remainder from an uneven division is spread over the first parts, so the final time always lands on your episode end. "Copy for email" puts the styled table on your clipboard (same colours and layout as the task emails), so pasting it into Gmail brings the design with it. Switch an editor off to drop them from the week without deleting them, and drag the handle (or use the arrow keys on it) to change who takes which part.
+  </footer>
+</div>
+
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+(() => {
+  "use strict";
+
+  /* ============================================================
+     Constants
+     ============================================================ */
+  const DEFAULTS = Object.freeze({
+    label: "Teşkilat S1 E182", start: "00:00:00", end: "02:24:00", parts: 5,
+    roster: ["Muaz", "Salma", "Basma", "Dalia", "Ahmed"],
+    snap: true, ms: false, gap: false, len: true, fmt: "table", rotAuto: true
+  });
+  const KEY = "eps-splitter-v2", OLD_KEY = "eps-splitter-v1", THEME_KEY = "eps-splitter-theme";
+  const REMOVED = /^ash?ra[kq]at$/i;   // no longer on the team
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+
+  // email design: same palette as the HilalPlay task emails
+  const C = { INK:"#1B2430", TEAL:"#0F4C5C", TEAL_SOFT:"#EAF1F3", GOLD:"#C8963E", LINE:"#E3DED2", MUTED:"#5B6572", ALT:"#FAF8F3" };
+  const SANS = "'Segoe UI',Helvetica,Arial,sans-serif", MONO = "Consolas,Menlo,'Courier New',monospace";
+
+  const $ = (id) => document.getElementById(id);
+  const els = Object.fromEntries(
+    ["label","start","end","parts","roster","newname","namehint","snap","ms","gap","len","rotAuto","rotBox","weekDate",
+     "rotHint","outlook","rows","ribbon","stats","thLen","emailprev","plainprev","toast","weekPill","note","themeSeg"]
+      .map((id) => [id, $(id)])
+  );
+
+  /* ============================================================
+     State
+     roster  = editors in "week 1" order (the stored base order)
+     display = the same editors in the order for the picked week
+     ============================================================ */
+  const state = { fmt: "table", view: "email", anchor: null, weekDate: null };
+  let roster = [];
+  let display = [];
+  let nextId = 1;
+  let rosterSig = "";
+  let lastRemoved = null;
+
+  const makeItem = (name, on = true) => ({ id: nextId++, name, on });
+  const isActive = (r) => r.on && r.name.trim() !== "";
+  const byId = (id) => roster.find((r) => String(r.id) === String(id));
+  const esc = (t) => String(t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const pad = (n, w) => String(n).padStart(w, "0");
+  const mod = (a, m) => ((a % m) + m) % m;
+  const defaultRoster = () => DEFAULTS.roster.map((n) => makeItem(n));
+  const cleanRoster = (list) => list
+    .filter((r) => r && typeof r.name === "string" && !REMOVED.test(r.name.trim()))
+    .map((r) => makeItem(r.name, r.on !== false));
+
+  /* ============================================================
+     Dates and weeks (calendar maths in UTC so DST never shifts a week)
+     ============================================================ */
+  const todayISO = () => { const d = new Date(); return `${d.getFullYear()}-${pad(d.getMonth() + 1, 2)}-${pad(d.getDate(), 2)}`; };
+  const validISO = (s) => typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s);
+  const dayNum = (iso) => { const [y, m, d] = iso.split("-").map(Number); return Math.floor(Date.UTC(y, m - 1, d) / 86400000); };
+  const isoFromDayNum = (n) => { const d = new Date(n * 86400000); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1, 2)}-${pad(d.getUTCDate(), 2)}`; };
+  const mondayOf = (iso) => { const n = dayNum(iso); return isoFromDayNum(n - ((n + 3) % 7)); };   // 1970-01-01 was a Thursday
+  const niceDate = (iso) => { const [y, m, d] = iso.split("-").map(Number); return `${d} ${MONTHS[m - 1]} ${y}`; };
+
+  /* ============================================================
+     Storage
+     ============================================================ */
+  function load() {
+    let s = null, migrated = false;
+    try { s = JSON.parse(localStorage.getItem(KEY) || "null"); } catch (e) { s = null; }
+    if (!s) { try { s = JSON.parse(localStorage.getItem(OLD_KEY) || "null"); migrated = !!s; } catch (e) { s = null; } }
+    const d = s && typeof s === "object" ? s : DEFAULTS;
+    els.label.value = d.label ?? DEFAULTS.label;
+    els.start.value = d.start ?? DEFAULTS.start;
+    els.end.value   = d.end   ?? DEFAULTS.end;
+    els.parts.value = d.parts ?? DEFAULTS.parts;
+    roster = Array.isArray(d.roster) ? cleanRoster(d.roster) : defaultRoster();
+    if (!roster.length) roster = defaultRoster();
+    if (migrated) { const a = roster.filter(isActive).length; if (a) els.parts.value = a; }
+    els.snap.checked = d.snap !== false;
+    els.ms.checked = d.ms === true;
+    els.gap.checked = d.gap === true;
+    els.len.checked = d.len !== false;
+    els.rotAuto.checked = d.rotAuto !== false;
+    state.fmt = d.fmt === "list" ? "list" : "table";
+    state.anchor = validISO(d.anchor) ? mondayOf(d.anchor) : mondayOf(todayISO());
+    state.weekDate = todayISO();
+    els.weekDate.value = state.weekDate;
+    let theme = "auto"; try { theme = localStorage.getItem(THEME_KEY) || "auto"; } catch (e) { /* blocked */ }
+    applyTheme(theme);
+  }
+  function save() {
+    try {
+      localStorage.setItem(KEY, JSON.stringify({
+        label: els.label.value, start: els.start.value, end: els.end.value, parts: els.parts.value,
+        roster: roster.map(({ name, on }) => ({ name, on })),
+        snap: els.snap.checked, ms: els.ms.checked, gap: els.gap.checked, len: els.len.checked,
+        rotAuto: els.rotAuto.checked, fmt: state.fmt, anchor: state.anchor
+      }));
+    } catch (e) { /* storage blocked: fine */ }
+  }
+  function applyTheme(t) {
+    const root = document.documentElement;
+    if (t === "light" || t === "dark") root.dataset.theme = t; else { delete root.dataset.theme; t = "auto"; }
+    els.themeSeg.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.themeSet === t)));
+    try { localStorage.setItem(THEME_KEY, t); } catch (e) { /* blocked */ }
+  }
+
+  /* ============================================================
+     Time
+     ============================================================ */
+  function parseTC(raw) {
+    if (raw == null) return null;
+    let s = String(raw).trim().replace(/،/g, ",");
+    if (!s) return null;
+    let msPart = 0;
+    const m = s.match(/^(.*?)[.,](\d{1,3})$/);
+    if (m) { s = m[1]; msPart = parseInt((m[2] + "00").slice(0, 3), 10); }
+    const bits = s.split(":");
+    if (bits.length < 2 || bits.length > 3) return null;
+    if (!bits.every((b) => /^\d{1,3}$/.test(b.trim()))) return null;
+    const [h, mi, se] = bits.length === 3 ? bits.map(Number) : [0, ...bits.map(Number)];
+    if (mi > 59 || se > 59) return null;
+    return (h * 3600 + mi * 60 + se) * 1000 + msPart;
+  }
+  function fmtTC(ms, withMs) {
+    const total = Math.round(Math.max(0, ms)), sec = Math.floor(total / 1000);
+    const out = `${pad(Math.floor(sec / 3600), 2)}:${pad(Math.floor(sec / 60) % 60, 2)}:${pad(sec % 60, 2)}`;
+    return withMs ? `${out},${pad(total % 1000, 3)}` : out;
+  }
+  function fmtMin(ms) {            // "28 min 48 s" or "29 min"
+    const sec = Math.round(ms / 1000), m = Math.floor(sec / 60), s = sec % 60;
+    return s ? `${m} min ${pad(s, 2)} s` : `${m} min`;
+  }
+  function fmtHM(ms) {             // "2 h 24 min"
+    const sec = Math.round(ms / 1000), h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60;
+    const out = h ? `${h} h ${pad(m, 2)} min` : `${m} min`;
+    return s ? `${out} ${pad(s, 2)} s` : out;
+  }
+
+  /* ============================================================
+     Rotation
+     ============================================================ */
+  function rotationInfo(week) {
+    const act = roster.filter(isActive), m = act.length;
+    const auto = els.rotAuto.checked && m > 0;
+    const idx = auto ? (dayNum(mondayOf(week)) - dayNum(state.anchor)) / 7 : 0;
+    const k = auto ? mod(idx, m) : 0;
+    const order = act.map((_, i) => act[mod(i - k, m)]);   // everyone moves k places down, the last wraps to the front
+    return { order, m, k, idx };
+  }
+  /** Roster items in the order shown for a week. Switched-off editors keep their slot. */
+  function arrange(week) {
+    const info = rotationInfo(week);
+    let j = 0;
+    return { ...info, items: roster.map((r) => (isActive(r) ? info.order[j++] : r)) };
+  }
+  /** Turn an order the user arranged for a week back into the stored week-1 order. */
+  function setFromDisplay(items, week) {
+    const { k, m } = rotationInfo(week);
+    const shown = items.filter(isActive);
+    const base = shown.map((_, j) => shown[mod(j + k, m)]);
+    let j = 0;
+    roster = items.map((r) => (isActive(r) ? base[j++] : r));
+  }
+  const syncParts = () => { const n = roster.filter(isActive).length; if (n >= 1) els.parts.value = n; };
+
+  /* ============================================================
+     Compute
+     ============================================================ */
+  function compute(w) {
+    const a = parseTC(els.start.value), b = parseTC(els.end.value), n = parseInt(els.parts.value, 10);
+    els.start.classList.toggle("bad", els.start.value.trim() !== "" && a === null);
+    els.end.classList.toggle("bad", els.end.value.trim() !== "" && b === null);
+    if (a === null || b === null) return { error: "Enter a start and an end time as HH:MM:SS." };
+    if (b <= a) return { error: "The end time has to be later than the start time." };
+    if (!(n >= 1) || n > 40) return { error: "Choose between 1 and 40 parts." };
+
+    const total = b - a, base = Math.floor(total / n), rem = total - base * n;
+    const bounds = [a];
+    for (let i = 0; i < n; i++) bounds.push(bounds[i] + base + (i < rem ? 1 : 0));
+    if (els.snap.checked) {
+      for (let i = 1; i < n; i++) bounds[i] = Math.round(bounds[i] / 1000) * 1000;
+      for (let i = 1; i <= n; i++) bounds[i] = Math.max(bounds[i], bounds[i - 1]);
+    }
+    const offset = els.gap.checked ? 1000 : 0, parts = [];
+    let sumLen = 0;
+    for (let p = 0; p < n; p++) {
+      const start = Math.min(p === 0 ? bounds[0] : bounds[p] + offset, bounds[p + 1]), end = bounds[p + 1];
+      parts.push({ i: p + 1, name: w.order[p] ? w.order[p].name.trim() : "", start, end, len: end - start, span: end - bounds[p] });
+      sumLen += end - start;
+    }
+    return { parts, total, sumLen, first: bounds[0], last: bounds[n], count: n, rot: w };
+  }
+
+  /* ============================================================
+     Text outputs
+     ============================================================ */
+  const who = (p) => p.name || `Part ${p.i}`;
+  function introText(r) {
+    const lbl = els.label.value.trim(), epi = lbl ? `The episode ${lbl}` : "The episode";
+    return r.count === 1 ? `${epi} is assigned as one part:`
+      : `${epi} is split into ${r.count} equal time parts, one part per person, in this order:`;
+  }
+  const summaryText = (r) => `Total ${fmtMin(r.total)} (${fmtTC(r.first, els.ms.checked)} to ${fmtTC(r.last, els.ms.checked)}), about ${fmtMin(r.total / r.count)} per part.`;
+  function lineFor(p) {
+    const s = `${who(p)}: ${fmtTC(p.start, els.ms.checked)} - ${fmtTC(p.end, els.ms.checked)}`;
+    return els.len.checked ? `${s} (${fmtMin(p.len)})` : s;
+  }
+  function plainText(r) {
+    const ms = els.ms.checked, showLen = els.len.checked, lbl = els.label.value.trim(), lines = [];
+    if (lbl) lines.push(`${lbl} - time code division`, "");
+    lines.push(introText(r), summaryText(r), "");
+    if (state.fmt === "list") {
+      r.parts.forEach((p) => lines.push(lineFor(p)));
+    } else {
+      const w = Math.max(4, ...r.parts.map((p) => who(p).length));
+      r.parts.forEach((p) => lines.push(
+        `${(p.i + ".").padEnd(4)}${who(p).padEnd(w)}  ${fmtTC(p.start, ms)} - ${fmtTC(p.end, ms)}${showLen ? "  " + fmtMin(p.len) : ""}`));
+      if (showLen) lines.push("", `Total work: ${fmtMin(r.sumLen)}`);
+    }
+    return lines.join("\n");
+  }
+
+  /* ---------- email HTML: inline styles only, so it survives a paste into Gmail ---------- */
+  const hPara = (inner, bottom) =>
+    `<p style="margin:0 0 ${bottom}px 0;font-family:${SANS};font-size:15px;line-height:24px;color:${C.INK};">${inner}</p>`;
+  const hSection = (title) =>
+    `<p style="margin:0 0 12px 0;padding:0 0 0 12px;border-left:4px solid ${C.GOLD};font-family:${SANS};font-size:12px;line-height:16px;letter-spacing:1.8px;color:${C.TEAL};"><b>${esc(title.toUpperCase())}</b></p>`;
+  const hTh = (label, right, width) =>
+    `<th align="${right ? "right" : "left"}" bgcolor="${C.TEAL}" style="${width ? `width:${width};` : ""}padding:10px 14px;background-color:${C.TEAL};color:#FFFFFF;font-family:${SANS};font-size:12px;line-height:16px;letter-spacing:1px;text-align:${right ? "right" : "left"};">${esc(label)}</th>`;
+  const hTd = (inner, o = {}) =>
+    `<td valign="top" bgcolor="${o.bg}" style="padding:11px 14px;border-top:${o.top || `1px solid ${C.LINE}`};background-color:${o.bg};font-family:${o.mono ? MONO : SANS};font-size:${o.mono ? 13.5 : 14}px;line-height:21px;color:${C.INK};${o.bold ? "font-weight:700;" : ""}${o.right ? "text-align:right;" : ""}${o.nowrap ? "white-space:nowrap;" : ""}">${inner}</td>`;
+
+  function emailHtml(r) {
+    const ms = els.ms.checked, showLen = els.len.checked, lbl = els.label.value.trim();
+    let intro = esc(introText(r));
+    if (lbl) intro = intro.replace(esc(lbl), `<b style="color:${C.INK};">${esc(lbl)}</b>`);
+    let h = `<div style="font-family:${SANS};color:${C.INK};">` + hSection("Assignment") + hPara(intro, 8) +
+      hPara(`<span style="color:${C.MUTED};">${esc(summaryText(r))}</span>`, 14);
+
+    if (state.fmt === "list") {
+      h += `<p style="margin:0 0 16px 0;font-family:${MONO};font-size:14px;line-height:28px;color:${C.INK};">` +
+        r.parts.map((p) => `<b style="font-family:${SANS};">${esc(who(p))}</b>: ${esc(fmtTC(p.start, ms))} - ${esc(fmtTC(p.end, ms))}` +
+          (showLen ? ` <span style="font-family:${SANS};color:${C.MUTED};">(${esc(fmtMin(p.len))})</span>` : "")).join("<br>") + "</p>";
+    } else {
+      h += `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="width:100%;border-collapse:separate;border-spacing:0;border:1px solid ${C.LINE};border-radius:8px;overflow:hidden;margin:2px 0 16px 0;"><thead><tr>` +
+        hTh("Part", false, "11%") + hTh("Who") + hTh("From") + hTh("To") + (showLen ? hTh("Length", true) : "") + "</tr></thead><tbody>";
+      r.parts.forEach((p, n) => {
+        const bg = n % 2 === 0 ? "#FFFFFF" : C.ALT;
+        h += "<tr>" + hTd(String(p.i), { bg, bold: true }) +
+          hTd(p.name ? esc(p.name) : `<i style="color:${C.MUTED};">Unassigned</i>`, { bg, bold: true }) +
+          hTd(esc(fmtTC(p.start, ms)), { bg, mono: true, nowrap: true }) + hTd(esc(fmtTC(p.end, ms)), { bg, mono: true, nowrap: true }) +
+          (showLen ? hTd(esc(fmtMin(p.len)), { bg, right: true, nowrap: true, bold: true }) : "") + "</tr>";
+      });
+      const top = `2px solid ${C.TEAL}`, t = { bg: C.TEAL_SOFT, top, bold: true };
+      h += "<tr>" + hTd("", t) + hTd("Total", t) +
+        hTd(esc(fmtTC(r.first, ms)), { ...t, mono: true, nowrap: true }) + hTd(esc(fmtTC(r.last, ms)), { ...t, mono: true, nowrap: true }) +
+        (showLen ? hTd(esc(fmtMin(r.sumLen)), { ...t, right: true, nowrap: true }) : "") + "</tr></tbody></table>";
+    }
+    return h + "</div>";
+  }
+
+  /* ============================================================
+     Rendering
+     ============================================================ */
+  const stat = (k, v, s) => `<div class="stat"><div class="k">${esc(k)}</div><div class="v">${esc(v)}</div><div class="s">${esc(s)}</div></div>`;
+
+  /** Rebuild the editor list only when the shown order or on/off state changed, so typing keeps its focus. */
+  function syncRoster() {
+    const sig = display.map((r) => r.id + (isActive(r) ? "+" : "-")).join(",");
+    if (sig === rosterSig) return;
+    rosterSig = sig;
+    const ae = document.activeElement;
+    const keep = ae && els.roster.contains(ae) && ae.closest(".ed")
+      ? { id: ae.closest(".ed").dataset.id, cls: [...ae.classList].find((c) => c.startsWith("ed-") || c === "grip"), s: ae.selectionStart, e: ae.selectionEnd }
+      : null;
+    els.roster.innerHTML = display.map((r) => `<li class="ed${r.on ? "" : " off"}" data-id="${r.id}">` +
+      `<button type="button" class="grip" aria-label="Reorder ${esc(r.name)}. Use the up and down arrow keys." title="Drag to reorder, or use the arrow keys">&#9782;</button>` +
+      `<input type="checkbox" class="ed-on"${r.on ? " checked" : ""} aria-label="Include ${esc(r.name)}">` +
+      `<input type="text" class="ed-name" value="${esc(r.name)}" spellcheck="false" aria-label="Editor name">` +
+      `<span class="slot muted"></span>` +
+      `<button type="button" class="ed-del" aria-label="Remove ${esc(r.name)}">&times;</button></li>`).join("");
+    if (keep && keep.cls) {
+      const target = els.roster.querySelector(`.ed[data-id="${keep.id}"] .${keep.cls}`);
+      if (target) { target.focus(); if (keep.s != null && target.setSelectionRange) { try { target.setSelectionRange(keep.s, keep.e); } catch (e) { /* not a text field */ } } }
+    }
+  }
+  function updateBadges(n) {
+    let rank = 0;
+    for (const r of display) {
+      const badge = els.roster.querySelector(`.ed[data-id="${r.id}"] .slot`);
+      if (!badge) continue;
+      if (!isActive(r)) { badge.className = "slot muted"; badge.textContent = "off"; continue; }
+      rank++;
+      badge.className = rank <= n ? "slot" : "slot muted";
+      badge.textContent = rank <= n ? `Part ${rank}` : "sits out";
+    }
+  }
+  function renderRotation(w) {
+    els.rotBox.hidden = !els.rotAuto.checked;
+    const mon = mondayOf(state.weekDate);
+    els.weekPill.textContent = `Week of ${niceDate(mon)}` + (els.rotAuto.checked && w.m ? ` | Step ${w.k + 1} of ${w.m}` : "");
+    if (!els.rotAuto.checked) return;
+    if (!w.m) { els.rotHint.textContent = "Switch at least one editor on to rotate."; els.outlook.innerHTML = ""; return; }
+    els.rotHint.textContent = `Week starting ${niceDate(mon)}. Step ${w.k + 1} of ${w.m}` +
+      (w.k === 0 ? " (the week 1 order)." : `, moved down ${w.k} place${w.k === 1 ? "" : "s"}.`);
+    els.outlook.innerHTML = [0, 1, 2, 3].map((i) => {
+      const wk = isoFromDayNum(dayNum(mon) + 7 * i);
+      return `<div${i === 0 ? ' class="now"' : ""}><b>${esc(niceDate(wk).replace(/ \d{4}$/, ""))}</b><span>${rotationInfo(wk).order.map((r) => esc(r.name.trim())).join(", ")}</span></div>`;
+    }).join("");
+  }
+
+  function render() {
+    const w = arrange(state.weekDate);
+    display = w.items;
+    const r = compute(w);
+    save();
+    syncRoster();
+
+    const names = w.m, n = parseInt(els.parts.value, 10), off = roster.length - names;
+    if (names && n && names !== n) {
+      els.namehint.className = "hint err";
+      els.namehint.textContent = `${names} editor${names === 1 ? "" : "s"} on for ${n} part${n === 1 ? "" : "s"}. ` +
+        (names < n ? "Extra parts stay unnamed." : "With rotation on, the extra editors take turns sitting out.");
+    } else {
+      els.namehint.className = "hint";
+      els.namehint.textContent = names
+        ? `Shown in this week's order, one part each${off ? `, ${off} switched off` : ""}. Drag the handle to reorder.`
+        : "Nobody switched on, so the parts stay numbered.";
+    }
+    updateBadges(n || 0);
+    renderRotation(w);
+    els.thLen.hidden = !els.len.checked;
+
+    if (r.error) {
+      els.rows.innerHTML = `<tr><td colspan="6" class="empty">${esc(r.error)}</td></tr>`;
+      els.ribbon.innerHTML = ""; els.stats.innerHTML = ""; els.emailprev.innerHTML = ""; els.plainprev.textContent = ""; els.note.hidden = true;
+      return;
+    }
+    const ms = els.ms.checked, showLen = els.len.checked;
+    els.stats.innerHTML =
+      stat("Episode length", `${Math.round(r.total / 60000)} min`, fmtHM(r.total)) +
+      stat("Parts", String(r.count), "one per person") +
+      stat("Average part", fmtMin(r.total / r.count), "of video") +
+      stat("Rotation", els.rotAuto.checked ? `Step ${w.k + 1}` : "Off", els.rotAuto.checked ? `of ${w.m || 1} this week` : "order as listed");
+
+    els.ribbon.innerHTML = r.parts.map((p) => {
+      const pct = (p.span / r.total) * 100;
+      return `<div style="width:${pct.toFixed(4)}%" title="${esc(who(p))}  ${fmtTC(p.start, false)} - ${fmtTC(p.end, false)}">${esc(pct > 8 ? who(p) : p.i)}</div>`;
+    }).join("");
+
+    els.rows.innerHTML = r.parts.map((p) => {
+      const pct = (p.len / r.total) * 100;
+      return `<tr><td class="idx">${p.i}</td>` +
+        `<td class="who">${p.name ? esc(p.name) : `<span class="unnamed">Part ${p.i}</span>`}</td>` +
+        `<td class="tc">${fmtTC(p.start, ms)}</td><td class="tc">${fmtTC(p.end, ms)}</td>` +
+        (showLen ? `<td class="dur"><span class="m">${fmtMin(p.len)}</span><span class="p">${pct.toFixed(1)}% of episode</span></td>` : "") +
+        `<td class="act"><button type="button" class="icon-btn" data-row="${p.i - 1}">COPY</button></td></tr>`;
+    }).join("") +
+      `<tr class="totalrow"><td class="idx"></td><td class="who">Total</td><td class="tc">${fmtTC(r.first, ms)}</td><td class="tc">${fmtTC(r.last, ms)}</td>` +
+      (showLen ? `<td class="dur"><span class="m">${fmtMin(r.sumLen)}</span></td>` : "") + "<td></td></tr>";
+
+    const spans = r.parts.map((p) => Math.round(p.span / 1000));
+    const uneven = els.snap.checked && Math.max(...spans) !== Math.min(...spans);
+    els.note.hidden = !uneven;
+    if (uneven) els.note.textContent = "Boundaries are whole seconds, so part lengths can differ by 1 second.";
+
+    els.emailprev.innerHTML = emailHtml(r);
+    els.plainprev.textContent = plainText(r);
+  }
+
+  /* ============================================================
+     Toast and clipboard
+     ============================================================ */
+  let toastTimer = 0;
+  function toast(msg, action) {
+    els.toast.replaceChildren(Object.assign(document.createElement("span"), { textContent: msg }));
+    els.toast.classList.toggle("act", !!action);
+    if (action) {
+      const b = Object.assign(document.createElement("button"), { type: "button", textContent: action.label });
+      b.addEventListener("click", () => { action.run(); els.toast.classList.remove("on"); });
+      els.toast.append(b);
+    }
+    els.toast.classList.add("on");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => els.toast.classList.remove("on"), action ? 6500 : 2200);
+  }
+  function fallbackText(text, msg) {
+    const ta = Object.assign(document.createElement("textarea"), { value: text });
+    ta.style.cssText = "position:fixed;opacity:0";
+    document.body.append(ta); ta.select();
+    let ok = false; try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    ta.remove();
+    toast(ok ? msg : "Could not reach the clipboard. Select the preview and copy it.");
+  }
+  function writePlain(text, msg) {
+    if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(() => toast(msg), () => fallbackText(text, msg));
+    else fallbackText(text, msg);
+  }
+  function fallbackRich(html, text, msg) {      // copies a hidden, selected copy of the styled block with its formatting
+    const box = document.createElement("div");
+    box.innerHTML = html; box.style.cssText = "position:fixed;left:-10000px;top:0;background:#fff;";
+    document.body.append(box);
+    const range = document.createRange(); range.selectNodeContents(box);
+    const sel = getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    let ok = false; try { ok = document.execCommand("copy"); } catch (e) { ok = false; }
+    sel.removeAllRanges(); box.remove();
+    if (ok) toast(msg); else writePlain(text, "Copied as plain text (rich copy is blocked here).");
+  }
+  function writeRich(html, text, msg) {
+    if (window.ClipboardItem && navigator.clipboard && navigator.clipboard.write) {
+      try {
+        const item = new ClipboardItem({ "text/html": new Blob([html], { type: "text/html" }), "text/plain": new Blob([text], { type: "text/plain" }) });
+        navigator.clipboard.write([item]).then(() => toast(msg), () => fallbackRich(html, text, msg));
+        return;
+      } catch (e) { /* fall through */ }
+    }
+    fallbackRich(html, text, msg);
+  }
+  const current = () => compute(arrange(state.weekDate));
+  function copyEmail() { const r = current(); if (r.error) return toast(r.error); writeRich(emailHtml(r), plainText(r), "Copied with the email styling. Paste it into the email."); }
+  function copyPlain() { const r = current(); if (r.error) return toast(r.error); writePlain(plainText(r), "Copied as plain text."); }
+
+  /* ============================================================
+     Wiring
+     ============================================================ */
+  function setSegs() {
+    document.querySelectorAll("[data-fmt]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.fmt === state.fmt)));
+    document.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === state.view)));
+    els.emailprev.hidden = state.view !== "email";
+    els.plainprev.hidden = state.view !== "plain";
+  }
+  [els.label, els.start, els.end, els.parts, els.snap, els.ms, els.gap, els.len, els.rotAuto]
+    .forEach((n) => ["input", "change"].forEach((ev) => n.addEventListener(ev, render)));
+
+  const bumpParts = (d) => { const n = parseInt(els.parts.value, 10); els.parts.value = Math.min(40, Math.max(1, (isNaN(n) ? 1 : n) + d)); render(); };
+  $("plus").addEventListener("click", () => bumpParts(1));
+  $("minus").addEventListener("click", () => bumpParts(-1));
+
+  document.addEventListener("click", (e) => {
+    const f = e.target.closest("[data-fmt]"), v = e.target.closest("[data-view]"), t = e.target.closest("[data-theme-set]");
+    if (f) { state.fmt = f.dataset.fmt; setSegs(); render(); }
+    if (v) { state.view = v.dataset.view; setSegs(); }
+    if (t) applyTheme(t.dataset.themeSet);
+  });
+  document.addEventListener("keydown", (e) => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); copyEmail(); } });
+
+  /* rotation controls */
+  const setWeek = (iso) => { state.weekDate = validISO(iso) ? iso : todayISO(); els.weekDate.value = state.weekDate; render(); };
+  els.weekDate.addEventListener("change", () => setWeek(els.weekDate.value));
+  $("weekPrev").addEventListener("click", () => setWeek(isoFromDayNum(dayNum(state.weekDate) - 7)));
+  $("weekNext").addEventListener("click", () => setWeek(isoFromDayNum(dayNum(state.weekDate) + 7)));
+  $("weekToday").addEventListener("click", () => setWeek(todayISO()));
+  $("bake").addEventListener("click", () => {
+    if (!roster.some(isActive)) return;
+    roster = arrange(state.weekDate).items.slice();
+    state.anchor = mondayOf(state.weekDate);
+    render();
+    toast("This week's order is now week 1.");
+  });
+
+  /* editor list */
+  els.roster.addEventListener("change", (e) => {
+    const box = e.target.closest(".ed-on"); if (!box) return;
+    const item = byId(box.closest(".ed").dataset.id); if (!item) return;
+    item.on = box.checked; syncParts(); render();
+  });
+  els.roster.addEventListener("input", (e) => {
+    const field = e.target.closest(".ed-name"); if (!field) return;
+    const item = byId(field.closest(".ed").dataset.id); if (!item) return;
+    item.name = field.value; syncParts(); render();
+  });
+  els.roster.addEventListener("click", (e) => {
+    const del = e.target.closest(".ed-del"); if (!del) return;
+    const item = byId(del.closest(".ed").dataset.id); if (!item) return;
+    const at = roster.indexOf(item);
+    roster.splice(at, 1); lastRemoved = { item, at };
+    syncParts(); render();
+    toast(`Removed ${item.name || "that row"}`, { label: "Undo", run: () => {
+      if (!lastRemoved) return;
+      roster.splice(Math.min(lastRemoved.at, roster.length), 0, lastRemoved.item); lastRemoved = null; syncParts(); render();
+    } });
+  });
+  els.roster.addEventListener("keydown", (e) => {
+    const grip = e.target.closest(".grip");
+    if (grip) {
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      e.preventDefault();
+      const id = grip.closest(".ed").dataset.id, items = display.slice();
+      const i = items.findIndex((r) => String(r.id) === id), to = i + (e.key === "ArrowUp" ? -1 : 1);
+      if (to < 0 || to >= items.length) return;
+      items.splice(to, 0, items.splice(i, 1)[0]);
+      setFromDisplay(items, state.weekDate); render();
+      const g = els.roster.querySelector(`.ed[data-id="${id}"] .grip`); if (g) g.focus();
+      return;
+    }
+    if (e.key === "Enter" && e.target.closest(".ed-name")) { e.preventDefault(); els.newname.focus(); }
+  });
+
+  /* drag to reorder: the handle arms the row, the row moves in the DOM, the order is read back when the drag ends */
+  let dragEl = null;
+  const disarm = () => els.roster.querySelectorAll(".ed").forEach((li) => { li.draggable = false; });
+  els.roster.addEventListener("mousedown", (e) => { const li = e.target.closest(".ed"); if (li && e.target.closest(".grip")) li.draggable = true; });
+  document.addEventListener("mouseup", () => { if (!dragEl) disarm(); });
+  els.roster.addEventListener("dragstart", (e) => {
+    const li = e.target.closest(".ed"); if (!li || !li.draggable) return;
+    dragEl = li; li.classList.add("dragging");
+    if (e.dataTransfer) { e.dataTransfer.effectAllowed = "move"; try { e.dataTransfer.setData("text/plain", "row"); } catch (err) { /* ignore */ } }
+  });
+  els.roster.addEventListener("dragover", (e) => {
+    if (!dragEl) return;
+    e.preventDefault();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "move";
+    let after = null, closest = -Infinity;
+    els.roster.querySelectorAll(".ed:not(.dragging)").forEach((li) => {
+      const box = li.getBoundingClientRect(), off = e.clientY - box.top - box.height / 2;
+      if (off < 0 && off > closest) { closest = off; after = li; }
+    });
+    if (!after) els.roster.append(dragEl); else if (after !== dragEl.nextSibling) els.roster.insertBefore(dragEl, after);
+  });
+  els.roster.addEventListener("drop", (e) => e.preventDefault());
+  els.roster.addEventListener("dragend", () => {
+    if (!dragEl) return;
+    dragEl.classList.remove("dragging"); dragEl = null; disarm();
+    const items = [...els.roster.children].map((li) => byId(li.dataset.id)).filter(Boolean);
+    if (items.length === roster.length) setFromDisplay(items, state.weekDate);
+    render();
+  });
+
+  function addEditor() {
+    const name = els.newname.value.trim();
+    if (!name) return els.newname.focus();
+    roster.push(makeItem(name)); els.newname.value = "";
+    syncParts(); render(); els.newname.focus();
+  }
+  $("addname").addEventListener("click", addEditor);
+  els.newname.addEventListener("keydown", (e) => { if (e.key === "Enter") { e.preventDefault(); addEditor(); } });
+  $("allOn").addEventListener("click", () => { roster.forEach((r) => { r.on = true; }); syncParts(); render(); });
+  $("allOff").addEventListener("click", () => { roster.forEach((r) => { r.on = false; }); render(); });
+
+  els.rows.addEventListener("click", (e) => {
+    const b = e.target.closest("button[data-row]"); if (!b) return;
+    const r = current(); if (r.error) return;
+    const p = r.parts[parseInt(b.dataset.row, 10)];
+    writePlain(lineFor(p), `Copied ${p.name || `part ${p.i}`}`);
+  });
+  $("copyMain").addEventListener("click", copyEmail);
+  $("copyPlain").addEventListener("click", copyPlain);
+
+  $("reset").addEventListener("click", () => {
+    try { localStorage.removeItem(KEY); localStorage.removeItem(OLD_KEY); } catch (e) { /* blocked */ }
+    Object.assign(els.label, { value: DEFAULTS.label }); els.start.value = DEFAULTS.start; els.end.value = DEFAULTS.end; els.parts.value = DEFAULTS.parts;
+    roster = defaultRoster(); rosterSig = "";
+    els.snap.checked = DEFAULTS.snap; els.ms.checked = DEFAULTS.ms; els.gap.checked = DEFAULTS.gap; els.len.checked = DEFAULTS.len; els.rotAuto.checked = DEFAULTS.rotAuto;
+    state.fmt = DEFAULTS.fmt; state.anchor = mondayOf(todayISO()); state.weekDate = todayISO(); els.weekDate.value = state.weekDate;
+    setSegs(); render();
+    toast("Back to the standard five-part setup.");
+  });
+
+  // read-only helpers used for testing
+  window.__splitter = { compute: current, arrange, rotationInfo, setFromDisplay, emailHtml, plainText, setWeek, state,
+    roster: () => roster, display: () => display };
+
+  load();
+  setSegs();
+  render();
+})();
+</script>
+</body>
+</html>
