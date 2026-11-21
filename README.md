@@ -16,8 +16,10 @@ Replace `assets/index.html` with the new version of the page, then rebuild.
 ./package-mac.sh        # universal Mac app  -> dist/Episode-Part-Splitter-mac.zip
 ./package-windows.sh    # Windows 64-bit     -> dist/Episode-Part-Splitter-windows.zip
 ```
-One-time setup on a Mac: Rust (`rustup`), `brew install mingw-w64`, `rustup target add x86_64-pc-windows-gnu`.
-The Windows build made on a Mac ships an `.exe` plus `WebView2Loader.dll`. For a single-file `.exe`
-use the GitHub Actions workflow in `.github/workflows/build.yml` (MSVC toolchain).
+One-time setup on a Mac: Rust (`rustup`), then
+`brew install llvm lld && cargo install cargo-xwin --locked && rustup target add x86_64-pc-windows-msvc`
+(cargo-xwin downloads Microsoft's Windows build libraries, which means accepting Microsoft's license terms).
+The Windows build is one standalone `.exe` (Visual C++ runtime linked in, WebView2 loader linked in).
+`.github/workflows/build.yml` builds the same thing on GitHub's machines if you prefer.
 
 Icons are generated from a script (Pillow); the results are committed in `assets/`.

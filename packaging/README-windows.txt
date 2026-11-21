@@ -1,11 +1,8 @@
 EPISODE PART SPLITTER - WINDOWS
 
 How to start
-  1. Unzip the whole folder (right-click the zip, Extract All). Do not run it from inside the zip.
-  2. Keep these two files together in the same folder:
-       Episode Part Splitter.exe
-       WebView2Loader.dll
-  3. Double-click "Episode Part Splitter.exe".
+  1. Unzip the folder (right-click the zip, Extract All). Do not run it from inside the zip.
+  2. Double-click "Episode Part Splitter.exe". It is a single file; nothing else is needed.
 
 First time only
   Windows may show a blue "Windows protected your PC" screen because the app is not
@@ -21,4 +18,4 @@ It looks and works exactly like the web page:
   - Your team, times and options are remembered between launches.
   - Settings are kept in:  %APPDATA%\EpisodeSplitter   (delete that folder to reset everything)
 
-To remove the app, delete the folder.
+To remove the app, delete the file.
